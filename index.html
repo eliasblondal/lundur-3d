@@ -1482,7 +1482,10 @@ function loadScan(S,cb){ if(S.obj){ cb(); return; } if(S.loading) return; if(!TH
     root.traverse(o=>{ if(o.isMesh){ const m=o.material; o.material=new THREE.MeshBasicMaterial({map:m.map||null,color:m.map?0xffffff:0xcccccc,side:THREE.DoubleSide,clippingPlanes:[CUT]}); o.userData.noCollide=true; } });
     root.visible=false; scene.add(root); S.obj=root; cb(); },
     undefined,()=>{ S.loading=false; $('loading').hidden=true; toast('Skönnunin hlóðst ekki. Reyndu aftur.'); setScanIdx(-1); }); }
-function setScanIdx(i){ scanIdx=i; scanOn=i>=0; const b=$('t-scan'); press(b,scanOn); b.textContent=i<0?'Skönnun':'Skönnun '+(i+1); if(scanOn){ deselect(); cancelPlace(); }
+let cutBeforeScan=null;
+function setScanIdx(i){ const was=scanOn; scanIdx=i; scanOn=i>=0;
+  // skönnunin er með lofti, svo veggir lækka meðan hún sést og fara svo í fyrri stöðu
+  if(scanOn&&!was&&!WALK.on){ cutBeforeScan=cutOn; setCut(true); } else if(!scanOn&&was&&cutBeforeScan!==null){ setCut(cutBeforeScan); cutBeforeScan=null; } const b=$('t-scan'); press(b,scanOn); b.textContent=i<0?'Skönnun':'Skönnun '+(i+1); if(scanOn){ deselect(); cancelPlace(); }
   for(const k of ['floors','walls','kitchen','fixtures','decor','items']) G[k].visible=!scanOn; G.ceil.visible=!scanOn&&(ceilOn||WALK.on);
   SCANS.forEach((S,j)=>{ if(S.obj) S.obj.visible=j===i; });
   if(scanOn){ const S=SCANS[i]; loadScan(S,()=>{ if(scanIdx===i){ S.obj.visible=true; toast(S.msg+' Smelltu aftur á takkann til að skipta.',3600); } }); } }
