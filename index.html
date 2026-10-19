@@ -126,6 +126,8 @@ body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btn.danger{color:var(--warn)}
 .btn.primary{background:var(--fg);color:var(--surface);border-color:var(--fg)}
+a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.btn.send{background:var(--note);color:var(--note-fg);border-color:var(--note);font-weight:600}
 .btn[aria-pressed="true"]{background:var(--fg);color:var(--surface);border-color:var(--fg)}
 
 /* athugasemdir */
@@ -323,7 +325,7 @@ h1{font-family:var(--f-display);font-weight:700;font-size:28px;line-height:1.1;m
     </div>
     <div class="sect" id="notes-sect">
       <h2>Athugasemdir <span class="n" id="notes-n">0</span></h2>
-      <div class="notes-ctl"><button class="btn" type="button" id="notes-add">+ Ný athugasemd</button><button class="btn" type="button" id="notes-show" aria-pressed="true">Sýna í líkani</button></div>
+      <div class="notes-ctl"><button class="btn" type="button" id="notes-add">+ Ný athugasemd</button><a class="btn send" id="notes-send" hidden href="#">Senda Elíasi</a><button class="btn" type="button" id="notes-copy" hidden>Afrita</button><button class="btn" type="button" id="notes-show" aria-pressed="true">Sýna í líkani</button></div>
       <p class="store-note" id="notes-note">Tengist geymslu…</p>
       <ul class="notes" id="notes-list"></ul>
     </div>
@@ -1671,7 +1673,7 @@ async function initNotes(){
   if(user){ try{ const me=await user.me(); NOTES.uid=me.id||null; }catch(e){} try{ const c=await user.can('data.write'); if(c===false) NOTES.canWrite=false; }catch(e){} }
   if(!db){ NOTES.mode='local'; NOTES.docs=nlsRead();
     NOTES.write=(id,p)=>{ const d=nlsRead(); d[id]=p; if(!nlsWrite(d)) throw {code:'local'}; }; NOTES.del=id=>{ const d=nlsRead(); delete d[id]; nlsWrite(d); };
-    nEl.note.textContent=window.claude?'Vistast aðeins í þessum vafra, því geymsla líkansins svarar ekki hér.':'Vistast aðeins í þessum vafra.'; nAccess(); renderNotes(); return; }
+    nEl.note.textContent=window.claude?'Vistast aðeins í þessum vafra, því geymsla líkansins svarar ekki hér.':'Vistast aðeins í þessum vafra. Smelltu á „Senda Elíasi“ til að senda honum þær í tölvupósti.'; nAccess(); renderNotes(); return; }
   NOTES.mode='db'; const col=db.collection('notes');
   NOTES.write=(id,p)=>col.doc(id).set(p); NOTES.del=id=>col.doc(id).delete();
   nEl.note.textContent=NOTES.canWrite?'Sjást öllum sem hafa aðgang að líkaninu. Claude getur lesið þær og unnið úr þeim.':'Þú hefur lesaðgang og getur skoðað athugasemdirnar en ekki bætt við.';
@@ -1722,13 +1724,23 @@ let nOccT=0; function nOccTick(now){ if(now-nOccT<200) return; nOccT=now; const 
     for(const h of nRay.intersectObjects(occ,true)) if(nSolid(h)){ behind=true; break; }
     L.el.classList.toggle('behind',behind); } }
 
+/* ---------- opna útgáfan (utan Claude): senda athugasemdirnar í pósti eða afrita ---------- */
+const NOTE_TO='elias@sante.is', nSendEl=$('notes-send'), nCopyEl=$('notes-copy');
+function nExportText(){ const ids=nOrder(), L=['Athugasemdir við líkanið af Lundi 92',location.href.split('#')[0],''];
+  for(const id of ids){ const d=NOTES.docs[id]; L.push(NOTES.num[id]+'. '+nPlace(d)+(d.done?' · lokið':'')+' · '+nDate(d.t)); L.push(d.text); L.push('[x '+d.x+', y '+d.y+', z '+d.z+(d.room?', '+d.room:'')+']'); L.push(''); }
+  return L.join('\n'); }
+function nExportSync(n){ const local=NOTES.mode==='local'&&!window.claude; nSendEl.hidden=nCopyEl.hidden=!(local&&n>0);
+  if(local&&n>0) nSendEl.href='mailto:'+NOTE_TO+'?subject='+encodeURIComponent('Athugasemdir við líkanið af Lundi 92 ('+n+')')+'&body='+encodeURIComponent(nExportText()); }
+nCopyEl.addEventListener('click',()=>{ const t=nExportText(), ok=()=>toast('Athugasemdirnar eru afritaðar. Límdu þær inn í póst eða skilaboð til Elíasar.',4000);
+  const old=()=>{ const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let r=false; try{ r=document.execCommand('copy'); }catch(e){} ta.remove(); r?ok():toast('Ekki tókst að afrita. Notaðu „Senda Elíasi“.'); };
+  try{ navigator.clipboard.writeText(t).then(ok,old); }catch(e){ old(); } });
 let nTok=0;
 async function renderNotes(){
   const ids=nOrder(), num={}; ids.forEach((id,i)=>num[id]=i+1); NOTES.num=num;
   for(const id in NOTES.pins) if(id!=='__draft'&&!num[id]) dropPin(id);
   for(const id of ids){ const d=NOTES.docs[id], L=pinFor(id); L.pos.set(d.x,d.y,d.z); L.el.querySelector('b').textContent=d.done?'✓':String(num[id]); L.el.classList.toggle('done',!!d.done);
     L.el.setAttribute('aria-label','Athugasemd '+num[id]+(d.done?' (lokið)':'')+': '+d.text.slice(0,90)); L.el.title=d.text.slice(0,160); }
-  nVis();
+  nVis(); nExportSync(ids.length);
   const open=ids.filter(id=>!NOTES.docs[id].done).length; nEl.n.textContent=open===ids.length?String(ids.length):open+' opnar · '+ids.length;
   const tok=++nTok; const ps=await nNames([...new Set(ids.map(id=>NOTES.docs[id].uid).filter(u=>typeof u==='string'))]); if(tok!==nTok) return;
   const ul=nEl.list; ul.innerHTML='';
@@ -1773,7 +1785,7 @@ function noteSubmit(){ const txt=nEl.input.value.replace(/\r/g,'').trim().slice(
   if(NOTES.open){ const id=NOTES.open, d=NOTES.docs[id]; if(!d){ noteClose(); return; } nSave(id,Object.assign({},d,{text:txt,et:Date.now()})); noteOpen(id); toast('Athugasemd '+NOTES.num[id]+' uppfærð.'); return; }
   const d=NOTES.draft; if(!d){ noteClose(); return; } const id='n-'+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36);
   const doc=Object.assign({text:txt,t:Date.now(),done:false},d); if(!doc.on) delete doc.on; if(NOTES.uid) doc.uid=NOTES.uid;
-  NOTES.draft=null; dropPin('__draft'); nSave(id,doc); noteOpen(id); toast('Athugasemd '+NOTES.num[id]+' vistuð.'); }
+  NOTES.draft=null; dropPin('__draft'); nSave(id,doc); noteOpen(id); toast('Athugasemd '+NOTES.num[id]+' vistuð.'+(NOTES.mode==='local'&&!window.claude?' Sendu Elíasi þær með „Senda Elíasi“ í listanum.':''),NOTES.mode==='local'&&!window.claude?4500:2600); }
 function noteOpen(id,quiet){ const d=NOTES.docs[id]; if(!nValid(d)) return; if(NOTES.draft){ NOTES.draft=null; dropPin('__draft'); }
   if(!quiet){ deselect(); cancelPlace(); noteCancelPlace(); }
   NOTES.open=id; NOTES.edit=false; nEl.h.textContent='Athugasemd '+(NOTES.num[id]||'')+(d.done?' · lokið':'');
